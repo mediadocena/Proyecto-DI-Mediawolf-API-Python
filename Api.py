@@ -1,47 +1,147 @@
-from flask import Flask,jsonify
-from flask_restful import reqparse, abort, Api, Resource
+from flask import Flask,request,jsonify
+from flask_restful import Resource,Api
 from flask_pymongo import PyMongo
-from requests import request
+from bson.objectid import ObjectId
+from markupsafe import escape
 import json
-import ast
 app = Flask(__name__)
 app.config['MONGO_DBNAME']='test'
 app.config['MONGO_URI']='mongodb+srv://Alejandro:Prueba1@proyectodi-sn0fh.mongodb.net/test?retryWrites=true&w=majority'
 mongo=PyMongo(app)
 api = Api(app)
 
-@app.route('/allusers', methods=['GET'])
-def get_all_users():
-  usr = mongo.db.user
-  output = []
-  for s in usr.find():
-    output.append({'username' : s['username'], 'password' : s['password']})
-  return jsonify({'result' : output})
+class JSONEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, ObjectId):
+            return str(o)
+        return json.JSONEncoder.default(self, o)
 
-@app.route('/user/<name>', methods=['GET'])
-def get_one_user(name):
-  usr = mongo.db.user
-  s = usr.find_one({'username' : name})
-  if s:
-    output = {'username' : s['username'],'password':s['password']}
-  else:
-    output = "No such name"
-  return jsonify({'result' : output})
+class Users(Resource):
+    def get(self):
+        usr = mongo.db.user
+        output=[]
+        for s in usr.find():
+            output.append({'username':s['username'],'email':s['email'],'emailVerified':s['emailVerified']})
+        return jsonify({'result':output})
+    def post(self):
+        usr=mongo.db.user
+        name= request.json['username']
+        email=request.json['email']
+        realm=request.json['realm']
+        password=request.json['password']
+        usr.insert_one({'realm':realm,'username':name,'password':password,'email':email,'emailVerified':'true'})
+        return{'status':'Nuevo Usuario Añadido'}
+    def put(self):  
+        usr=mongo.db.user
+        #TODO
+        return{'status':'usuario modificado'}
 
-@app.route('/postuser<datos>', methods=['POST'])
-def add_user(datos):
-  print('entra')
-  usr = mongo.db.user
-  content = datos
-  print(content)
-  realm = content['realm']
-  name = content['username']
-  email = content['email']
-  password = request.form.get('password')
-  user_id = usr.insert(content)
-  new_user = usr.find_one({'id': user_id })
-  output = {'username' : new_user['username'], 'password' : new_user['password'],'mail':new_user['email'],'realm':new_user['realm'],'emailVerified':new_user['emailVerified']}
-  return jsonify({'result' : output})
+class Noticias(Resource): 
+    def get(self):
+        usr=mongo.db.noticia
+        output=[]
+        for s in usr.find():
+            di = JSONEncoder().encode(s['_id']).replace('"','')
+            output.append({'id':di,'categoria':s['categoria'],'titulo':s['titulo'],'img':s['img'],'subtitulo':s['subtitulo'],'cuerpo':s['cuerpo']})
+        return output
 
-if __name__ == '__main__':
-    app.run(debug=True)
+    def post(self):
+        usr=mongo.db.noticia
+        title=request.json['titulo']
+        subtitle=request.json['subtitulo']
+        categoria = request.json['categoria']
+        img=request.json['img']
+        body=request.json['cuerpo']
+        comments=request.json['comentarios']
+        usr.insert_one({'titulo':title,'subtitulo':subtitle,'categoria':categoria,'img':img,'cuerpo':body,'comentarios':comments})
+        return{'status':'Nueva noticia añadida'}
+
+    def put(self):
+        usr=mongo.db.noticia
+        di = request.json['id']
+        title=request.json['titulo']
+        subtitle=request.json['subtitulo']
+        img=request.json['img']
+        body=request.json['cuerpo']
+        comments=request.json['comentarios']
+        usr.update_one({'_id':ObjectId(di)},{'$set':{'titulo':title,'subtitulo':subtitle,'img':img,'cuerpo':body,'comentarios':comments}})
+        return{'status':'noticia actualizada correctamente'}
+
+    def delete(self):
+        usr = mongo.db.noticia
+        di = request.args.get('id')
+        usr.delete_one({'_id':ObjectId(di)})
+        return {'status':'Noticia eliminada correctamente'}
+class NoticiasId(Resource):
+        def get(self):  
+            usr=mongo.db.noticia
+            di = request.args['_id']
+            print(di)
+            for s in usr.find({'_id':ObjectId(di)}): 
+                di = s['_id']
+                categoria = s['categoria']
+                titulo = s['titulo']
+                subtitulo = s['subtitulo']
+                img = s['img']
+                cuerpo = s['cuerpo']
+                comArr = []
+                for c in s['comentarios']: 
+                    objid = c['id']
+                    comArr.append({
+                    'id':JSONEncoder().encode(objid).replace('"',''),
+                    'nick' : c['nick'],
+                    'cuerpo' : c['cuerpo'],
+                    'icono' : c['icono']
+                    })
+
+                noticia = {
+                    'id':JSONEncoder().encode(di).replace('"',''),
+                    'titulo':titulo,
+                    'categoria':categoria,
+                    'subtitulo':subtitulo,
+                    'img':img,
+                    'cuerpo':cuerpo,
+                    'comentarios':comArr
+                }
+                print('NOTISIO',noticia['comentarios'])
+            return jsonify(noticia)
+@app.route('/Busqueda/<args>')
+def Busqueda(args):
+    usr=mongo.db.noticia
+    output=[]
+    for s in usr.find():
+        if escape(args).lower() in str(s['titulo']).lower():    
+            di = JSONEncoder().encode(s['_id']).replace('"','')
+            output.append({'id':di,'categoria':s['categoria'],'titulo':s['titulo'],'img':s['img'],'subtitulo':s['subtitulo'],'cuerpo':s['cuerpo']})
+    return jsonify(output)
+
+@app.route('/Posts/<id>')
+def BorrarPost(args):
+    usr = mongo.db.post
+    di = escape(args)
+    usr.delete_one({'_id':ObjectId(di)})
+    return {'status':'Post borrado'}
+'''
+@app.route('/BusquedaPost/<args>')
+def BusquedaPost(args):
+    usr=mongo.db.post
+    output=[]
+    for s in usr.find():
+        if escape(args) in s['titulo']:    
+            di = JSONEncoder().encode(s['_id']).replace('"','')
+            output.append({'id':di,'categoria':s['categoria'],'titulo':s['titulo'],'userId':s['userId'],'cuerpo':s['cuerpo']})
+    return jsonify(output)
+'''
+
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE')
+    return response
+api.add_resource(Users,'/users')
+api.add_resource(Noticias,'/noticias')
+api.add_resource(NoticiasId,'/noticiasId')
+
+if __name__ =='__main__':
+    app.run()
