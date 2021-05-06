@@ -11,7 +11,7 @@ cx-Oracle==7.2.3
 Django==2.2.7
 dnspython==1.16.0
 Flask==1.1.1
-Flask-Cors==3.0.8
+Flask-Cors==3.0.9
 Flask-PyMongo==2.3.0
 Flask-RESTful==0.3.7
 flask-swagger-ui==3.20.9
